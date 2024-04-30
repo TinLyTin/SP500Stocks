@@ -1,0 +1,483 @@
+---
+title: "FNCE 2404 - Final Project - SP500 Stocks"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+```{r}
+# Load the required library
+library(tidyverse)
+
+# Load the datasets from the CSV files
+sp500_companies <- read.csv('/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_companies.csv')
+sp500_index <- read.csv('/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_index.csv')
+sp500_stocks <- read.csv('/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv')
+
+# Display the first few rows of each dataframe to understand the structure and contents
+sp500_companies_head <- head(sp500_companies)
+sp500_index_head <- head(sp500_index)
+sp500_stocks_head <- head(sp500_stocks)
+
+# Output the first few rows of each dataframe
+list(sp500_companies_head, sp500_index_head, sp500_stocks_head)
+```
+
+```{r}
+# Check data types and look for missing values in the datasets
+# Get information about the dataframes
+sp500_companies_info <- str(sp500_companies)
+sp500_index_info <- str(sp500_index)
+sp500_stocks_info <- str(sp500_stocks)
+
+# Calculate missing values in each dataframe
+sp500_companies_missing <- colSums(is.na(sp500_companies))
+sp500_index_missing <- colSums(is.na(sp500_index))
+sp500_stocks_missing <- colSums(is.na(sp500_stocks))
+
+# Output the results
+list(sp500_companies_info = sp500_companies_info, 
+     sp500_companies_missing = sp500_companies_missing,
+     sp500_index_info = sp500_index_info,
+     sp500_index_missing = sp500_index_missing,
+     sp500_stocks_info = sp500_stocks_info,
+     sp500_stocks_missing = sp500_stocks_missing)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Data cleaning
+
+# Fill numerical missing values with median for sp500_companies
+numerical_cols <- c('Ebitda', 'Revenuegrowth', 'Fulltimeemployees')
+sp500_companies[numerical_cols] <- sp500_companies[numerical_cols] %>%
+  mutate(across(all_of(numerical_cols), ~ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+# Fill numerical missing values with median for sp500_stocks
+numerical_cols <- c('Adj.Close', 'Close', 'High', 'Low', 'Open', 'Volume')
+sp500_stocks[numerical_cols] <- sp500_stocks[numerical_cols] %>%
+  mutate(across(all_of(numerical_cols), ~ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+# Fill categorical missing values with 'Unknown'
+categorical_cols_with_na <- c('Sector', 'Industry', 'State')
+sp500_companies[categorical_cols_with_na] <- sp500_companies[categorical_cols_with_na] %>%
+  mutate(across(all_of(categorical_cols_with_na), ~ifelse(is.na(.), 'Unknown', .)))
+
+categorical_cols_with_na <- c('Symbol')
+sp500_stocks[categorical_cols_with_na] <- sp500_stocks[categorical_cols_with_na] %>%
+  mutate(across(all_of(categorical_cols_with_na), ~ifelse(is.na(.), 'Unknown', .)))
+
+# Convert 'Date' column to datetime in sp500_index for further analysis
+sp500_index$Date <- as.Date(sp500_index$Date)
+sp500_stocks$Date <- as.Date(sp500_stocks$Date)
+
+# Verify the cleaning by checking for missing values again
+sp500_companies_cleaned_missing <- colSums(is.na(sp500_companies))
+sp500_index_cleaned_missing <- colSums(is.na(sp500_index))
+sp500_stocks_cleaned_missing <- colSums(is.na(sp500_stocks))
+
+# Output the results
+list(sp500_companies_cleaned_missing, sp500_index_cleaned_missing, sp500_stocks_cleaned_missing)
+```
+
+```{r}
+
+library(ggplot2)
+library(reshape2)
+
+# EDA: Correlation Analysis for sp500_companies
+# Calculate the correlation matrix and melt it
+correlation_matrix <- cor(sp500_companies[numerical_cols_for_corr], use = "pairwise.complete.obs")
+melted_correlation_matrix <- melt(correlation_matrix)
+
+# Plot the heatmap for the correlation matrix
+heatmap_plot <- ggplot(data = melted_correlation_matrix, aes(x = Var2, y = Var1, fill = value)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = sprintf("%.2f", value)), vjust = 0.5, color = "black", size = 4) +
+  scale_fill_gradient2(low = "white", high = "lightblue", mid = "lightgreen", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(vjust = 0.5),
+        panel.grid = element_blank(),
+        panel.border = element_blank()) +
+  labs(title = 'Correlation Matrix of SP500 Companies')
+
+# Display the heatmap plot
+print(heatmap_plot)
+```
+
+```{r}
+#install.packages("plotly")
+library(plotly)
+library(dplyr)
+library(readr)
+
+# Load the sp500_stocks DataFrame from the CSV file
+sp500_stocks <- read_csv('/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv')
+
+# Define the list of specific stocks
+specific_stocks <- c('GOOG', 'AAPL', 'GE', 'AMZN', 'META', 'CRM', 'MSFT', 'COST', 'QCOM', 'GS', 'ADBE', 'NVDA')
+
+# Filter stock data for specific stocks
+specific_stock_data <- sp500_stocks %>% 
+  filter(Symbol %in% specific_stocks)
+
+# Define a set of bright colors for the lines and bars
+colors <- c('GOOG' = '#E24A33', 'AAPL' = '#348ABD', 'GE' = '#988ED5', 'AMZN' = '#777777', 'META' = '#FBC15E',
+            'CRM' = '#8EBA42', 'MSFT' = '#FFB5B8', 'COST' = '#FF0000', 'QCOM' = '#00FF00', 'GS' = '#0000FF',
+            'ADBE' = '#F0027F', 'NVDA' = '#6A3D9A')
+
+# Plotly for interactive visualization - Adjusted Close Prices
+fig <- plot_ly(data = specific_stock_data, x = ~Date, y = ~`Adj Close`, color = ~Symbol, colors = colors, 
+               type = 'scatter', mode = 'lines') %>%
+  layout(title = 'Adjusted Close Prices of Specific Stocks Over Time',
+         hovermode = 'x',
+         xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Adjusted Close'))
+
+# Display the plot
+fig
+
+# Histogram with matching colors for the bars - Trading Volume
+fig_histogram <- plot_ly(specific_stock_data, x = ~Volume, color = ~Symbol, colors = colors, type = 'histogram', 
+                         nbinsx = 30, histnorm = 'percent') %>%
+  layout(title = 'Distribution of Trading Volume for Specific Stocks',
+         barmode = 'overlay',
+         yaxis = list(title = 'Percentage')) %>%
+  style(marker = list(line = list(color = 'grey', width = 1), opacity = 0.6))
+
+# Display the histogram
+fig_histogram
+```
+
+```{r}
+#ARIMA Model 
+# Load required libraries
+packages <- c("forecast", "xts", "dplyr", "lubridate", "readr")
+lapply(packages, function(pkg) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+        install.packages(pkg)
+    }
+    library(pkg, character.only = TRUE)
+})
+
+# Load and prepare data
+file_path <- '/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv'
+if (!file.exists(file_path)) {
+    stop("File does not exist: ", file_path)
+}
+sp500_stocks <- read_csv(file_path)
+
+
+print(colnames(sp500_stocks))
+
+# Using NVDA for forecasting 
+# Assuming the adjusted close column is actually named 'AdjClose' without the period
+nvda_stock_data <- sp500_stocks %>%
+  filter(Symbol == "NVDA") %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  select(Date, `Adj Close`) %>%  
+  arrange(Date)
+
+# Print the first few rows of nvda_stock_data to check its content
+print(head(nvda_stock_data))
+
+# Ensure that the data frame isn't empty after filtering
+if (nrow(nvda_stock_data) == 0) {
+    stop("No data found for the specified symbol 'NVDA' after filtering.")
+}
+
+# Check for NA values to ensure clean data for xts object creation
+if (anyNA(nvda_stock_data$Date) || anyNA(nvda_stock_data$`Adj Close`)) {
+  stop("NA values found in 'Date' or 'Adj.Close' columns.")
+}
+
+# Try creating the xts object
+nvda_ts <- try(xts(nvda_stock_data$`Adj Close`, order.by = nvda_stock_data$Date), silent = TRUE)
+
+# Check if the xts object creation was successful
+if (inherits(nvda_ts, "try-error")) {
+    stop("Error in xts object creation: ", conditionMessage(nvda_ts))
+}
+
+# Now, use length() to check if nvda_ts is non-empty
+if (is.null(nvda_ts) || length(nvda_ts) == 0) {
+    stop("nvda_ts is NULL or empty after xts object creation.")
+}
+
+# Confirm nvda_ts is a single-column xts object
+if (!is.xts(nvda_ts) || ncol(nvda_ts) != 1) {
+    stop("nvda_ts is not a valid single-column xts object.")
+}
+
+# Fit a ARIMA model
+# Define training data up to the end of March 2024
+train_end_date <- as.Date("2024-03-31")
+if (max(index(nvda_ts)) >= train_end_date) {
+  train_data <- window(nvda_ts, end = train_end_date)
+} else {
+  stop("No training data available up to ", train_end_date, ". Check your 'nvda_ts' time range.")
+}
+
+# Now, train_data should be available for use
+print(head(train_data))
+
+# Fit a non-seasonal ARIMA model (assuming no clear seasonality in the data)
+arima_model <- auto.arima(train_data, seasonal = FALSE)
+
+# Perform model diagnostics
+checkresiduals(arima_model)
+
+# Generate forecasts
+num_forecast_periods <- length(seq(from = as.Date("2024-04-01"), to = as.Date("2024-09-30"), by = "day"))
+arima_forecast <- forecast(arima_model, h = num_forecast_periods)
+
+# Display forecasted values with 95% confidence intervals
+forecast_df <- data.frame(
+    Date = seq(from = as.Date("2024-04-01"), to = as.Date("2024-09-30"), by = "day"),
+    Forecasted_Close = arima_forecast$mean,
+    Lo_80 = arima_forecast$lower[,2],  # Lower 80% confidence interval
+    Hi_80 = arima_forecast$upper[,2],  # Upper 80% confidence interval
+    Lo_95 = arima_forecast$lower[,1],  # Lower 95% confidence interval
+    Hi_95 = arima_forecast$upper[,1]   # Upper 95% confidence interval
+)
+print("Forecasted Values from April to September 2024 with Confidence Intervals:")
+print(forecast_df)
+
+# ARIMA Model Summary
+cat("ARIMA Model Summary:\n")
+summary(arima_model)
+```
+
+```{r}
+#Exponential Smoothing Model 
+# Load libraries
+library(forecast)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+
+# Load and prepare data
+file_path <- '/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv'
+if (!file.exists(file_path)) {
+    stop("File does not exist: ", file_path)
+}
+
+# Read data and ensure that it reads correctly
+nvda_stock_data <- read.csv(file_path)
+if (nrow(nvda_stock_data) == 0) {
+    stop("No data was read from the file.")
+}
+
+# Read data and print column names
+nvda_stock_data <- read.csv(file_path)
+print(colnames(nvda_stock_data))
+
+# Filter and prepare NVDA stock data
+nvda_stock_data <- nvda_stock_data %>%
+  filter(Symbol == "NVDA") %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  arrange(Date)
+
+# Debugging output
+print("After filtering and arranging:")
+print(head(nvda_stock_data))
+
+# Check if there's data after filtering
+if (nrow(nvda_stock_data) == 0) {
+    stop("No data found for NVDA after filtering.")
+}
+
+# Check if 'Adj Close' column is present
+if (!"Adj.Close" %in% names(nvda_stock_data)) {
+    stop("'Adj.Close' column is missing from the data.")
+}
+
+# Generate a time series object, assuming monthly data with an annual cycle
+if (anyNA(nvda_stock_data$`Adj Close`)) {
+    nvda_stock_data <- na.omit(nvda_stock_data)  # Remove NA values
+    if (nrow(nvda_stock_data) == 0) {
+        stop("No data available after removing NA values.")
+    }
+}
+nvda_ts <- ts(nvda_stock_data$`Adj.Close`, start = c(year(min(nvda_stock_data$Date)), month(min(nvda_stock_data$Date))), frequency = 12)
+
+# Fit Holt-Winters exponential smoothing model
+hw_model <- HoltWinters(nvda_ts, seasonal = "additive")
+
+# Forecast future values
+forecast_steps = 6 
+hw_forecast <- forecast(hw_model, h = forecast_steps)
+
+# Generate forecast and create a data frame for ggplot
+hw_forecast_df <- data.frame(
+  Time = seq(as.Date("2024-04-01"), as.Date("2024-09-30"), by = "month"),
+  Value = hw_forecast$mean,
+  Data_Type = "Forecasted"
+)
+
+# Append actual data to the forecast data for plotting
+actual_data_df <- data.frame(
+  Time = as.Date(paste(year(nvda_stock_data$Date), month(nvda_stock_data$Date), "01", sep = "-")),
+  Value = nvda_stock_data$`Adj.Close`,
+  Data_Type = "Actual"
+)
+plot_data <- rbind(actual_data_df, hw_forecast_df)
+
+# Plot the model fit and forecasts using ggplot
+ggplot(plot_data, aes(x = Time, y = Value, color = Data_Type)) +
+  geom_line() +
+  ggtitle("Holt-Winters Exponential Smoothing Forecast") +
+  xlab("Time (Years)") +
+  ylab("Adjusted Close Price") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  scale_color_manual(values = c("blue", "red")) +
+  theme_minimal()
+
+# Printing the forecasted values with appropriate date formatting
+print("Forecasted Values for the next periods:")
+print(hw_forecast_df)
+```
+
+```{r}
+#SARIMA Model 
+library(forecast)
+library(lubridate)
+library(ggplot2)
+
+# Load and prepare data
+file_path <- '/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv'
+if (!file.exists(file_path)) {
+    stop("File does not exist: ", file_path)
+}
+
+# Read data and ensure that it reads correctly
+nvda_stock_data <- read.csv(file_path)
+if (!"Adj.Close" %in% names(nvda_stock_data)) {
+    stop("'Adj.Close' column is missing from the data.")
+}
+
+nvda_stock_data$Date <- as.Date(nvda_stock_data$Date, format = "%Y-%m-%d")
+nvda_stock_data <- nvda_stock_data[order(nvda_stock_data$Date),]
+
+# Filter and prepare NVDA stock data
+nvda_stock_data <- nvda_stock_data %>%
+  filter(Symbol == "NVDA") %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  arrange(Date)
+
+# Debugging output
+print("After filtering and arranging:")
+print(head(nvda_stock_data))
+
+# Convert the 'Adj Close' column to a time series object
+nvda_ts <- ts(nvda_stock_data$`Adj.Close`, frequency = 12, start = c(year(min(nvda_stock_data$Date)), month(min(nvda_stock_data$Date))))
+
+# Define the training data as all data up to March 2024
+train_data <- window(nvda_ts, end = c(2024, 3))
+
+# Fit a seasonal ARIMA model
+sarima_model <- auto.arima(train_data, seasonal = TRUE, stepwise = FALSE, approximation = FALSE, trace = TRUE)
+
+# Check diagnostics
+checkresiduals(sarima_model)
+
+# Forecasting from April 2024 to September 2024
+forecast_steps <- 6  # April to September
+sarima_forecast <- forecast(sarima_model, h = forecast_steps)
+
+# Creating a sequence of dates for the forecast period
+forecast_dates <- seq.Date(from = as.Date("2024-04-01"), length.out = forecast_steps, by = "month")
+
+# Dataframe for plotting
+forecast_df <- data.frame(Date = forecast_dates, Forecasted_Adj_Close = sarima_forecast$mean)
+
+# Plot historical data and forecasts
+ggplot(data = nvda_stock_data, aes(x = Date, y = `Adj.Close`)) +
+    geom_line(color = "grey") +
+    geom_line(data = forecast_df, aes(x = Date, y = Forecasted_Adj_Close), color = "blue") +
+    ggtitle("Historical and Forecasted NVDA Adjusted Close Prices") +
+    xlab("Date") +
+    ylab("Adjusted Close Price")
+
+# Print model summary
+summary(sarima_model)
+```
+
+```{r}
+#Dynamic Regression SARIMA Model 
+library(forecast)
+library(lubridate)
+library(ggplot2)
+
+# Load and prepare data
+file_path <- '/Users/tingly/Desktop/Time Series Forecasting/Final Project /Kaggle Dataset/sp500_stocks.csv'
+if (!file.exists(file_path)) {
+    stop("File does not exist: ", file_path)
+}
+
+# Read data
+nvda_stock_data <- read.csv(file_path)
+if (!"Adj.Close" %in% names(nvda_stock_data) || !"Volume" %in% names(nvda_stock_data)) {
+    stop("'Adj.Close' or 'Volume' column is missing from the data.")
+}
+
+nvda_stock_data$Date <- as.Date(nvda_stock_data$Date, format = "%Y-%m-%d")
+nvda_stock_data <- nvda_stock_data[order(nvda_stock_data$Date),]
+
+# Filter and prepare NVDA stock data
+nvda_stock_data <- nvda_stock_data %>%
+  filter(Symbol == "NVDA") %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  arrange(Date)
+
+# Convert to time series objects
+nvda_ts <- ts(nvda_stock_data$`Adj.Close`, frequency = 12, start = c(year(min(nvda_stock_data$Date)), month(min(nvda_stock_data$Date))))
+volume_ts <- ts(nvda_stock_data$Volume, frequency = 12, start = c(year(min(nvda_stock_data$Date)), month(min(nvda_stock_data$Date))))
+
+# Define training and testing data
+train_data <- window(nvda_ts, end = c(2024, 3))
+train_volume <- window(volume_ts, end = c(2024, 3))
+
+# Forecast period
+forecast_steps <- 6  # April to September
+test_volume <- window(volume_ts, start = c(2024, 4), end = c(2024, 9))
+
+# Fit a SARIMA model with exogenous variables
+tryCatch({
+  regression_model <- auto.arima(train_data, xreg = train_volume, seasonal = TRUE, stepwise = FALSE, approximation = FALSE, trace = TRUE)
+  regression_forecast <- forecast(regression_model, xreg = test_volume, h = forecast_steps)
+
+  # Calculate RMSE
+  actual <- window(nvda_ts, start = c(2024, 4), end = c(2024, 9))
+  regression_rmse <- sqrt(mean((actual - regression_forecast$mean)^2))
+  print(paste("RMSE:", regression_rmse))
+  
+  # Plot the results
+  forecast_dates <- seq.Date(from = as.Date("2024-04-01"), length.out = forecast_steps, by = "month")
+  forecast_df <- data.frame(Date = forecast_dates, Forecasted_Adj_Close = regression_forecast$mean)
+  ggplot(data = nvda_stock_data, aes(x = Date, y = `Adj.Close`)) +
+    geom_line(color = "grey") +
+    geom_line(data = forecast_df, aes(x = Date, y = Forecasted_Adj_Close), color = "red") +
+    ggtitle("Dynamic Regression SARIMA Forecast with Volume as Exogenous Variable") +
+    xlab("Date") +
+    ylab("Forecasted Adjusted Close Price")
+
+}, error = function(e) {
+  print(paste("An error occurred:", e$message))
+})
+
+# Summary of the model
+print(summary(regression_model))
+
+# Suppress warnings
+options(warn = -1)
+```
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
